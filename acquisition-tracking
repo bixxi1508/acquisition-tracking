@@ -1,0 +1,215 @@
+with pn_info as 
+(
+select    
+          merchantgroup,
+          min(first_partnertrue_date) as pn_date,
+          max(contracted_commission) as contracted_com
+from `dept.fact_merchant_master_data_20230316` 
+where merchanttype = 'MERCHANT'
+and isPartner = True
+group by 1
+),
+lc_1 as 
+(
+  select    mc.merchantgroup,
+            mc.fromcity,
+            count(mc.merchantid) as stores
+  from `dept.fact_merchant_master_data_20230316` mc
+  where merchanttype = 'MERCHANT'
+  group by 1,2
+),
+lc_2 as 
+(
+  select  lc_1.*
+  from lc_1 
+  left join 
+    (
+      select  merchantgroup,
+              max(stores) as m_stores
+      from lc_1 
+      group by 1
+    ) y on    y.merchantgroup = lc_1.merchantgroup 
+          and y.m_stores = lc_1.stores 
+  where y.m_stores is not null 
+),
+cat_1 as 
+(
+  select    mc.merchantgroup,
+            mc.primary_category,
+            count(mc.merchantid) as stores
+  from `dept.fact_merchant_master_data_20230316` mc
+  where merchanttype = 'MERCHANT'
+  group by 1,2
+),
+cat_2 as 
+(
+  select  cat_1.*
+  from cat_1 
+  left join 
+    (
+      select  merchantgroup,
+              max(stores) as m_stores
+      from cat_1 
+      group by 1
+    ) y on    y.merchantgroup = cat_1.merchantgroup 
+          and y.m_stores = cat_1.stores 
+  where y.m_stores is not null 
+),
+partner_f30d as 
+(
+select mc.merchantgroup,
+count 
+(case when od.isPartner = true 
+AND od.date_createdAt >= mc.first_partnertrue_date
+AND od.date_createdAt <= DATE_ADD(mc.first_partnertrue_date, INTERVAL 30 DAY)
+AND od.status_system = 'DELIVERED'
+then successorder
+else null
+end) as f30d_orders,
+sum 
+(case when od.isPartner = true 
+AND od.date_createdAt >= mc.first_partnertrue_date
+AND od.date_createdAt <= DATE_ADD(mc.first_partnertrue_date, INTERVAL 30 DAY)
+AND od.status_system = 'DELIVERED'
+then GMV_successorder
+else null
+end) as f30d_gfv,
+sum 
+(case when od.isPartner = true 
+AND od.date_createdAt >= mc.first_partnertrue_date
+AND od.date_createdAt <= DATE_ADD(mc.first_partnertrue_date, INTERVAL 30 DAY)
+AND od.status_system = 'DELIVERED'
+then commission_revenue_excl_vat
+else null
+end) as f30d_comm_rev,
+sum 
+(case when od.isPartner = true 
+AND od.date_createdAt >= mc.first_partnertrue_date
+AND od.date_createdAt <= DATE_ADD(mc.first_partnertrue_date, INTERVAL 30 DAY)
+AND od.status_system = 'DELIVERED'
+then merchant_share_final
+else null
+end) as f30d_mcs,
+from `dept.fact_merchant_master_data_20230316` mc
+left join `dept.fact_order_master_data_v2` od on od.merchantid = mc.merchantid
+where mc.isPartner = true
+group by 1
+),
+mcf as 
+(
+  select      distinct
+              mc.merchantgroup,
+              dim.start_date
+  from `dept.dim_list_share_final` dim
+  left join `dept.fact_merchant_master_data_20230316` mc on mc.merchantid = dim.merchantid
+),
+flag_1 as 
+(
+  select  pn_info.merchantgroup,
+          case when mcf.start_date <= DATE_ADD(pn_info.pn_date, INTERVAL 30 DAY) then true 
+          else false end as first_mcf_flag 
+  from pn_info
+  left join mcf on mcf.merchantgroup = pn_info.merchantgroup 
+),
+flag_2 as 
+(
+  select  merchantgroup,
+          count (case when first_mcf_flag = true then 1 else null end) as flag_mcf
+  from flag_1
+  group by 1
+),
+segment_1 as 
+(
+  select    mc.merchantgroup,
+            mc.segment,
+            count(mc.merchantid) as stores
+  from `dept.fact_merchant_master_data_20230316` mc
+  where merchanttype = 'MERCHANT'
+  and ispartner = True
+  group by 1,2
+),
+segment_2 as 
+(
+  select  
+          merchantgroup,
+          countif(stores >= 1 and segment = 'AAA') as aaa,
+          countif(stores >= 1 and segment = 'Local Heroes') as local_heroes,
+          countif(stores >= 1 and segment = 'SMEs') as smes,
+          countif(stores >= 1 and segment = 'Long-tails') as long_tails,
+  from segment_1 
+  group by 1
+),
+segment_3 as 
+(
+select  merchantgroup,
+        case when aaa >= 1 then 'AAA'
+        when local_heroes >= 1 then 'Local Heroes'
+        when smes >= 1 then 'SMEs'
+        else 'Long-tails'
+        end as segment
+from segment_2
+),
+pic_type as 
+(
+  select    mc.merchantgroup,
+            case when merchant_pic = 'No 1-1 PIC' then 'No PIC'
+            else 'have PIC' end as mc_pic
+  from `dept.fact_merchant_master_data_20230316` mc
+  where merchanttype = 'MERCHANT'
+),
+pic_type_2 as 
+(
+  select  merchantgroup,
+          mc_pic,
+          count(merchantgroup) as stores
+  from pic_type
+  group by 1,2
+),
+pic_type_3 as 
+(
+  select  merchantgroup,
+          countif(stores >= 1 and mc_pic = 'No PIC') as no_pic,
+          countif(stores >= 1 and mc_pic = 'have PIC') as have_pic,
+  from pic_type_2
+  group by 1
+),
+pic_type_4 as 
+(
+  select    merchantgroup,
+            case when have_pic >= 1 then 'Have PIC'
+            else 'No PIC' end as pic_type
+  from pic_type_3
+),
+raw as 
+(
+select  distinct 
+        pn_info.*,
+        lc_2.fromcity,
+        cat_2.primary_category,
+        partner_f30d.f30d_orders,
+        partner_f30d.f30d_gfv,
+        partner_f30d.f30d_comm_rev,
+        partner_f30d.f30d_mcs,
+        flag_mcf,
+        segment_3.segment,
+        pic_type_4.pic_type
+from pn_info 
+left join lc_2 on lc_2.merchantgroup = pn_info.merchantgroup 
+left join cat_2 on cat_2.merchantgroup = pn_info.merchantgroup 
+left join partner_f30d on partner_f30d.merchantgroup = pn_info.merchantgroup 
+left join flag_2 on flag_2.merchantgroup = pn_info.merchantgroup
+left join segment_3 on segment_3.merchantgroup = pn_info.merchantgroup 
+left join  pic_type_4 on pic_type_4.merchantgroup = pn_info.merchantgroup 
+)
+
+select  fromcity,
+        segment,
+        pic_type,
+        count(merchantgroup) as mc_group,
+        countif(flag_mcf >= 1) as mc_group_join_mcf,
+        sum(f30d_orders) as f30d_orders,
+        sum(f30d_gfv) as f30d_gfv,
+        sum(f30d_comm_rev) as f30d_comm_rev,
+        sum(f30d_mcs) as f30d_mcs
+from raw
+group by 1,2,3
