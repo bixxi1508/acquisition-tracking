@@ -4,7 +4,7 @@ SELECT '04'MONTH, CASE WHEN FROMCITY IN ('Hà Nội','Hồ Chí Minh','Đà Nẵ
                       else null end) as Partner,
    count(distinct case when isPartner = False then merchantid
                       else null end) as nonPartner,
-FROM `baemin-vietnam.dept.fact_merchant_master_data_20230430`
+FROM `dept.fact_merchant_master_data_20230430`
 WHERE 1=1
 AND createdAt < '2023-05-01'
 AND store_status_layer_1 IN ('ACTIVE')
@@ -19,7 +19,7 @@ SELECT '03'MONTH, CASE WHEN FROMCITY IN ('Hà Nội','Hồ Chí Minh','Đà Nẵ
                       else null end) as Partner,
    count(distinct case when isPartner = False then merchantid
                       else null end) as nonPartner,
-FROM `baemin-vietnam.dept.fact_merchant_master_data_20230331`
+FROM `dept.fact_merchant_master_data_20230331`
 WHERE 1=1
 AND createdAt < '2023-04-01'
 AND store_status_layer_1 IN ('ACTIVE')
@@ -34,7 +34,7 @@ SELECT '02'MONTH, CASE WHEN FROMCITY IN ('Hà Nội','Hồ Chí Minh','Đà Nẵ
                       else null end) as Partner,
    count(distinct case when isPartner = False then merchantid
                       else null end) as nonPartner,
-FROM `baemin-vietnam.dept.fact_merchant_master_data_20230228`
+FROM `dept.fact_merchant_master_data_20230228`
 WHERE 1=1
 AND createdAt < '2023-03-01'
 AND store_status_layer_1 IN ('ACTIVE')
