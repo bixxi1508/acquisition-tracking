@@ -1,0 +1,82 @@
+with session_collect as
+(
+  select  distinct cast(session_id as int) as session_id,
+          True as flag,
+  FROM `dept.my_traffic_test`
+  where event_type = 'Select Icon Section'
+),
+raw_1 as 
+(
+  select  tf.*,
+          ROW_NUMBER() OVER 
+            (PARTITION BY cast(tf.session_id as int) ORDER BY event_time asc) AS all_event_ranking,
+          case when event_type = 'Select Icon Section' then true
+          else false end as flag,
+  from `dept.my_traffic_test` tf
+  left join session_collect on session_collect.session_id = tf.session_id 
+  where session_collect.flag = TRUE 
+  order by event_time asc
+),
+min_icon as 
+(
+select  session_id,
+        min(all_event_ranking) as min_icon
+from raw_1
+where event_type = 'Select Icon Section'
+group by 1
+),
+raw_2 as 
+(
+select  raw_1.*
+from raw_1
+left join min_icon on min_icon.session_id = raw_1.session_id
+where cast(all_event_ranking as int) >= cast(min_icon.min_icon as int)
+)
+,
+raw_3 as 
+(
+select  *,
+        concat(session_id,'-', COUNTIF(flag = True) OVER(PARTITION BY cast(session_id as int)  ORDER BY event_time asc)) session_group_id
+from raw_2
+)
+, raw_4 as 
+(
+select  *,
+         ROW_NUMBER() OVER 
+            (PARTITION BY session_group_id ORDER BY event_time asc) AS rank_again,
+from raw_3
+),
+raw_5 as 
+( 
+  select raw_4.*,
+          coalesce(od.rank_again,0) as od_flag
+  from raw_4
+  left join 
+  (
+      select  session_group_id,
+              rank_again
+      from raw_4
+      where event_type = 'Order Success'
+  ) od on od.session_group_id = raw_4.session_group_id
+),
+raw_6 as 
+(
+select  raw_5.*,
+        case when event_type in ('Select Banner Section','Select CollectionGroup','Select Collection','Select SearchMerchantScreen','Collection View all') and rank_again < od_flag then 'churned'
+        else 'ok' end as churn_flag
+from raw_5
+),
+group_flag as 
+(
+select  distinct session_group_id,
+        case when countif(churn_flag = 'churned') >= 1 or countif(event_type='Order Success') = 0 then 'churned'
+        else 'ok' end as flag 
+from raw_6
+group by 1
+)
+select  raw_6.session_group_id,
+        raw_6.event_properties,
+        group_flag.flag
+from raw_6 
+left join group_flag on group_flag.session_group_id = raw_6.session_group_id 
+where raw_6.event_type = 'Select Icon Section'
