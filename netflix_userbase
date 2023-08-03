@@ -1,0 +1,40 @@
+CREATE TABLE generated_month (
+    generated_month DATETIME(6)
+);
+
+-- Insert data into the generated_month table using recursive CTE
+INSERT INTO generated_month (generated_month)
+WITH RECURSIVE date_range AS (
+    SELECT '2001-01-01 00:00:00' AS generated_month
+    UNION ALL
+    SELECT TIMESTAMPADD(MONTH, 1, generated_month) AS generated_month
+    FROM date_range
+    WHERE generated_month < '2023-08-01 00:00:00'
+)
+
+CREATE TABLE `netflix_user_cooked` (
+    `User ID` INT,
+    `Subscription Type` VARCHAR(100),
+    `Monthly Revenue` DECIMAL(10, 2),
+    `Country` VARCHAR(100),
+    `Age` INT,
+    `Gender` VARCHAR(10),
+    `Device` VARCHAR(100),
+    `Plan Duration` VARCHAR(100),
+    `Join Date` DATE,
+    `Last Payment Date` DATE,
+    `end_date` DATE,
+    `start_date` DATE,
+    `monthly_rev` DECIMAL(10, 2)
+);
+
+INSERT INTO `netflix_user_cooked` (`User ID`, `Subscription Type`, `Monthly Revenue`, `Country`, `Age`, `Gender`, `Device`, `Plan Duration`, `Join Date`, `Last Payment Date`, `end_date`, `start_date`, `monthly_rev`)
+SELECT DISTINCT n.`User ID`, n.`Subscription Type`, n.`Monthly Revenue`, n.`Country`, n.`Age`, n.`Gender`, n.`Device`, n.`Plan Duration`, n.`Join Date`, n.`Last Payment Date`,
+       LEAST(LAST_DAY(x.generated_month), n.`Last Payment Date`) as end_date,
+       GREATEST(x.generated_month, n.`Join Date`) as start_date,
+       (n.`Monthly Revenue` / 30) * 
+       (TO_DAYS(LEAST(LAST_DAY(x.generated_month), n.`Last Payment Date`)) - TO_DAYS(GREATEST(x.generated_month, n.`Join Date`))) as monthly_rev
+FROM `netflix userbase` n
+LEFT JOIN generated_month x
+ON x.generated_month >= DATE_FORMAT(n.`Join Date`, '%Y-%m-01')
+AND x.generated_month <= n.`Last Payment Date`
